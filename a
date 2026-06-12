@@ -1,0 +1,327 @@
+%%manim -qm -v WARNING T2SSettlementEngineGlobalView
+
+from manim import *
+
+
+class Tank(VGroup):
+    def __init__(
+        self,
+        label,
+        amount,
+        capacity,
+        color,
+        width=1,
+        height=1.2,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+
+        self.account_label = label
+        self.amount = amount
+        self.capacity = capacity
+        self.color = color
+        self.w = width
+        self.h = height
+        self.border = RoundedRectangle(
+            width=self.w,
+            height=self.h,
+            corner_radius=0.08,
+            stroke_color=WHITE,
+            stroke_width=2.5,
+            fill_opacity=0
+        )
+
+        fill_ratio = max(0, min(amount / capacity, 1))
+        fill_height = fill_ratio * self.h
+
+        self.fill = Rectangle(
+            width=self.w,
+            height=max(fill_height, 0.001),
+            stroke_width=0,
+            fill_color=color,
+            fill_opacity=0.75
+        )
+
+        self.fill.align_to(self.border, DOWN)
+        self.fill.move_to(self.border.get_bottom() + UP * fill_height / 2)
+
+        self.label = Text(label, font_size=14)
+        self.value = Text(str(amount), font_size=16, color=WHITE)
+
+        self.label.next_to(self.border, UP, buff=0.12)
+        self.value.move_to(self.border.get_center())
+
+        self.add(self.border, self.fill, self.label, self.value)
+
+    def update_amount(self, new_amount):
+        new_tank = Tank(
+            self.account_label,
+            new_amount,
+            self.capacity,
+            self.color,
+            self.w,
+            self.h
+        )
+        new_tank.move_to(self)
+        return Transform(self, new_tank)
+
+
+class T2SSettlementEngineGlobalView(Scene):
+    def construct(self):
+        self.camera.background_color = "#0b1020"
+
+        title = Text("T2S Night Settlement Engine", font_size=40)
+        subtitle = Text(
+            "The engine does not settle transaction by transaction.\nIt looks at all pending transactions together.",
+            font_size=23,
+            color=GRAY_B,
+            line_spacing=1.1
+        )
+
+        VGroup(title, subtitle).arrange(DOWN, buff=0.2).to_edge(UP)
+
+        self.play(Write(title), FadeIn(subtitle))
+        self.wait(1.5)
+
+        cash = {"A": 80, "B": 40, "C": 70}
+        securities = {"A": 30, "B": 80, "C": 50}
+
+        capacity = 100
+
+        cash_tanks = {}
+        sec_tanks = {}
+
+        cash_group = VGroup()
+        sec_group = VGroup()
+
+        for bank in ["A", "B", "C"]:
+            cash_tank = Tank(f"Bank cash account {bank}", cash[bank], capacity, GREEN)
+            sec_tank = Tank(f"CSD security account {bank}", securities[bank], capacity, BLUE)
+
+            cash_tanks[bank] = cash_tank
+            sec_tanks[bank] = sec_tank
+
+            cash_group.add(cash_tank)
+            sec_group.add(sec_tank)
+
+        cash_group.arrange(DOWN, buff=0.75)
+        sec_group.arrange(DOWN, buff=0.75)
+
+        cash_group.move_to(LEFT * 4.8 + DOWN * 0.45)
+        sec_group.move_to(RIGHT * 4.8 + DOWN * 0.45)
+
+        self.play(
+            LaggedStart(*[FadeIn(tank, shift=UP) for tank in cash_group], lag_ratio=0.15),
+            LaggedStart(*[FadeIn(tank, shift=UP) for tank in sec_group], lag_ratio=0.15),
+        )
+
+        self.wait(1)
+
+        # --------------------------------------------------
+        # All pending transactions
+        # --------------------------------------------------
+
+        pending_title = Text("All pending transactions", font_size=26, color=YELLOW)
+        pending_title.move_to(UP * 1.2)
+
+        transactions = [
+            # buyer, seller, cash amount, securities amount, selected?
+            ("A", "B", 30, 30, True),
+            ("C", "A", 20, 20, True),
+            ("B", "C", 40, 40, True),
+            ("A", "C", 60, 60, False),
+        ]
+
+        tx_cards = VGroup()
+
+        for idx, (buyer, seller, cash_amount, sec_amount, selected) in enumerate(transactions, start=1):
+            card = RoundedRectangle(
+                width=2.6,
+                height=0.65,
+                corner_radius=0.08,
+                stroke_color=YELLOW,
+                stroke_width=2,
+                fill_color="#1a2140",
+                fill_opacity=0.9
+            )
+
+            txt = Text(
+                f"T{idx}: {buyer} buys {sec_amount} from {seller}",
+                font_size=15,
+                color=WHITE
+            )
+
+            item = VGroup(card, txt)
+            txt.move_to(card.get_center())
+            tx_cards.add(item)
+
+        tx_cards.arrange(DOWN, buff=0.2)
+        tx_cards.move_to(ORIGIN + DOWN * 0.35)
+
+        self.play(FadeIn(pending_title), LaggedStart(*[FadeIn(c) for c in tx_cards], lag_ratio=0.1))
+        self.wait(1.5)
+
+        # --------------------------------------------------
+        # Engine global view
+        # --------------------------------------------------
+
+        engine_box = RoundedRectangle(
+            width=4.0,
+            height=4.3,
+            corner_radius=0.15,
+            stroke_color=WHITE,
+            stroke_width=3,
+            fill_color="#111832",
+            fill_opacity=0.95
+        ).move_to(ORIGIN + DOWN * 0.25)
+
+        engine_label = Text("Settlement engine", font_size=25, color=WHITE)
+        engine_label.next_to(engine_box, UP, buff=0.15)
+
+        global_view = Text(
+            "Global view:\nchoose the best feasible subset",
+            font_size=22,
+            color=GRAY_B,
+            line_spacing=1.1
+        ).move_to(engine_box.get_center())
+
+        self.play(
+            FadeOut(pending_title),
+            tx_cards.animate.scale(0.82).move_to(engine_box.get_center()),
+            FadeIn(engine_box),
+            FadeIn(engine_label),
+        )
+
+        self.play(FadeIn(global_view))
+        self.wait(1.8)
+        self.play(FadeOut(global_view))
+
+        # Highlight selected transactions
+        selected_rects = []
+
+        for i, (_, _, _, _, selected) in enumerate(transactions):
+            if selected:
+                rect = SurroundingRectangle(tx_cards[i], color=GREEN, buff=0.05)
+            else:
+                rect = SurroundingRectangle(tx_cards[i], color=RED, buff=0.05)
+
+            selected_rects.append(rect)
+
+        decision_text = Text(
+            "Selected transactions settle together.\nRejected ones wait for a later settlement.",
+            font_size=23,
+            color=GRAY_B,
+            line_spacing=1.1
+        ).to_edge(DOWN)
+
+        self.play(
+            LaggedStart(*[Create(r) for r in selected_rects], lag_ratio=0.15),
+            FadeIn(decision_text)
+        )
+
+        self.wait(2)
+
+        self.play(
+            FadeOut(decision_text),
+            FadeOut(engine_box),
+            FadeOut(engine_label),
+            FadeOut(tx_cards),
+            *[FadeOut(r) for r in selected_rects]
+        )
+
+        # --------------------------------------------------
+        # Now settle selected transactions
+        # --------------------------------------------------
+
+        settle_text = Text(
+            "The selected transactions are then settled.",
+            font_size=26,
+            color=YELLOW
+        ).to_edge(DOWN)
+
+        self.play(FadeIn(settle_text))
+        self.wait(1)
+
+        selected_transactions = [
+            t for t in transactions if t[4]
+        ]
+
+        for idx, (buyer, seller, cash_amount, sec_amount, _) in enumerate(selected_transactions, start=1):
+
+            tx_label = Text(
+                f"Settling selected T{idx}: {buyer} buys from {seller}",
+                font_size=23,
+                color=YELLOW
+            ).to_edge(DOWN)
+
+            self.play(Transform(settle_text, tx_label))
+
+            # Cash movement
+            cash_particle = Circle(
+                radius=0.09,
+                fill_color=GREEN,
+                fill_opacity=1,
+                stroke_width=0
+            ).move_to(cash_tanks[buyer].get_center())
+
+            cash_path = ArcBetweenPoints(
+                cash_tanks[buyer].get_right(),
+                cash_tanks[seller].get_right(),
+                angle=(2*(buyer>seller)-1)*PI / 3,
+                color=GREEN
+            )
+
+            self.play(FadeIn(cash_particle), Create(cash_path))
+            self.play(MoveAlongPath(cash_particle, cash_path), run_time=1.2)
+            self.play(FadeOut(cash_particle), FadeOut(cash_path))
+
+            cash[buyer] -= cash_amount
+            cash[seller] += cash_amount
+
+            self.play(
+                cash_tanks[buyer].update_amount(cash[buyer]),
+                cash_tanks[seller].update_amount(cash[seller]),
+                run_time=0.8
+            )
+
+            # Securities movement
+            sec_particle = Circle(
+                radius=0.09,
+                fill_color=BLUE,
+                fill_opacity=1,
+                stroke_width=0
+            ).move_to(sec_tanks[seller].get_center())
+
+            sec_path = ArcBetweenPoints(
+                sec_tanks[seller].get_left(),
+                sec_tanks[buyer].get_left(),
+                angle =(-2*(buyer>seller)-1)*PI / 3,
+                color=BLUE
+            )
+
+            self.play(FadeIn(sec_particle), Create(sec_path))
+            self.play(MoveAlongPath(sec_particle, sec_path), run_time=1.2)
+            self.play(FadeOut(sec_particle), FadeOut(sec_path))
+
+            securities[seller] -= sec_amount
+            securities[buyer] += sec_amount
+
+            self.play(
+                sec_tanks[seller].update_amount(securities[seller]),
+                sec_tanks[buyer].update_amount(securities[buyer]),
+                run_time=0.8
+            )
+
+            self.wait(0.3)
+
+        self.play(FadeOut(settle_text))
+
+        final_text = Text(
+            "Key idea: the engine optimizes over the whole set of transactions,\nnot one transaction at a time.",
+            font_size=28,
+            color=WHITE,
+            line_spacing=1.1
+        ).to_edge(DOWN)
+
+        self.play(FadeIn(final_text))
+        self.wait(3)
