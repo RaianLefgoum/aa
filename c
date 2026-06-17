@@ -28,7 +28,7 @@ class MathematicalOptimizationIntro(Scene):
             font_size=30,
             color=WHITE,
             line_spacing=1.15,
-        ).move_to(ORIGIN)
+        ).move_to(ORIGIN) 
 
         examples = Text(
             "Examples: minimize cost, maximize settlement,\n"
