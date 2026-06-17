@@ -30,58 +30,138 @@ class T2SComplexityExplosionSimple(Scene):
 
         for i in range(8):
             box = RoundedRectangle(
-                width=1.05,
-                height=0.55,
-                corner_radius=0.08,
+                width=0.8,
+                height=0.45,
+                corner_radius=0.06,
                 stroke_color=YELLOW,
                 stroke_width=2,
                 fill_color="#1a2140",
                 fill_opacity=0.9,
             )
-            label = Text(f"T{i+1}", font_size=18)
+            label = Text(f"T{i+1}", font_size=15)
             label.move_to(box)
             transactions.add(VGroup(box, label))
 
-        transactions.arrange(RIGHT, buff=0.25).move_to(UP * 0.85)
+        transactions.arrange(RIGHT, buff=0.18).move_to(UP * 0.85)
 
         self.play(LaggedStart(*[FadeIn(t) for t in transactions], lag_ratio=0.08))
-
-        choices = VGroup()
-
-        for t in transactions:
-            settle = Text("settle", font_size=16, color=GREEN)
-            wait = Text("wait", font_size=16, color=RED)
-            pair = VGroup(settle, wait).arrange(DOWN, buff=0.08)
-            pair.next_to(t, DOWN, buff=0.22)
-            choices.add(pair)
-
-        self.play(LaggedStart(*[FadeIn(c) for c in choices], lag_ratio=0.08))
         self.wait(1)
 
-        formula1 = MathTex(
-            r"\text{Each transaction is binary: settle or wait}",
-            font_size=34,
-        )
+        simplification = Text(
+            "To understand the idea, let us simplify to only 3 transactions.",
+            font_size=28,
+            color=GRAY_B,
+        ).move_to(DOWN * 0.25)
 
-        formula2 = MathTex(
-            r"\text{Number of possible subsets} = 2^N",
-            font_size=44,
+        self.play(FadeIn(simplification))
+        self.wait(1.5)
+
+        simple_transactions = transactions[:3].copy()
+        simple_transactions.arrange(RIGHT, buff=0.5).move_to(UP * 1.05)
+
+        self.play(
+            FadeOut(transactions),
+            TransformFromCopy(transactions[:3], simple_transactions),
+            FadeOut(simplification),
+            FadeOut(section),
+        )
+        self.wait(1)
+
+        binary_explain = Text(
+            "For each transaction, the engine has 2 choices:",
+            font_size=27,
+        ).move_to(UP * 0.15)
+
+        choice_text = Text(
+            "settle  or  wait",
+            font_size=32,
             color=YELLOW,
+        ).next_to(binary_explain, DOWN, buff=0.25)
+
+        self.play(FadeIn(binary_explain), FadeIn(choice_text))
+        self.wait(1.5)
+
+        self.play(FadeOut(binary_explain), FadeOut(choice_text))
+
+        combo_title = Text(
+            "With only 3 transactions, we already have 8 possibilities:",
+            font_size=27,
+        ).move_to(UP * 2.05)
+
+        self.play(FadeIn(combo_title))
+
+        combos = [
+            ("wait", "wait", "wait"),
+            ("settle", "wait", "wait"),
+            ("wait", "settle", "wait"),
+            ("wait", "wait", "settle"),
+            ("settle", "settle", "wait"),
+            ("settle", "wait", "settle"),
+            ("wait", "settle", "settle"),
+            ("settle", "settle", "settle"),
+        ]
+
+        combo_rows = VGroup()
+
+        for combo in combos:
+            row = VGroup()
+
+            for decision in combo:
+                color = GREEN if decision == "settle" else RED
+
+                cell = RoundedRectangle(
+                    width=0.95,
+                    height=0.32,
+                    corner_radius=0.05,
+                    stroke_color=color,
+                    stroke_width=1.3,
+                    fill_color="#1a2140",
+                    fill_opacity=0.85,
+                )
+
+                label = Text(decision, font_size=14, color=color)
+                label.move_to(cell)
+
+                row.add(VGroup(cell, label))
+
+            row.arrange(RIGHT, buff=0.18)
+            combo_rows.add(row)
+
+        combo_rows.arrange(DOWN, buff=0.08)
+        combo_rows.next_to(simple_transactions, DOWN, buff=0.35)
+
+        self.play(
+            LaggedStart(
+                *[FadeIn(row, shift=RIGHT * 0.25) for row in combo_rows],
+                lag_ratio=0.12,
+            )
         )
+        self.wait(2)
 
-        VGroup(formula1, formula2).arrange(DOWN, buff=0.35).move_to(DOWN * 1.5)
+        conclusion = MathTex(
+            r"3\ \text{transactions} \Rightarrow 2 \times 2 \times 2 = 2^3 = 8",
+            font_size=34,
+            color=YELLOW,
+        ).to_edge(DOWN)
 
-        self.play(Write(formula1))
-        self.play(Write(formula2))
+        self.play(Write(conclusion))
         self.wait(2)
 
         self.play(
-            FadeOut(section),
-            FadeOut(transactions),
-            FadeOut(choices),
-            FadeOut(formula1),
-            formula2.animate.move_to(UP * 2.3),
+            FadeOut(simple_transactions),
+            FadeOut(combo_title),
+            FadeOut(combo_rows),
+            FadeOut(conclusion),
         )
+
+        formula2 = MathTex(
+            r"N\ \text{transactions} \Rightarrow 2^N\ \text{possibilities}",
+            font_size=42,
+            color=YELLOW,
+        ).move_to(UP * 2.3)
+
+        self.play(Write(formula2))
+        self.wait(1.5)
 
         examples_title = Text("How fast does it explode?", font_size=34)
         examples_title.move_to(UP * 1.45)
@@ -97,7 +177,12 @@ class T2SComplexityExplosionSimple(Scene):
 
         examples.arrange(DOWN, buff=0.35).move_to(DOWN * 0.25)
 
-        self.play(LaggedStart(*[FadeIn(e, shift=RIGHT) for e in examples], lag_ratio=0.25))
+        self.play(
+            LaggedStart(
+                *[FadeIn(e, shift=RIGHT) for e in examples],
+                lag_ratio=0.25,
+            )
+        )
         self.wait(2.5)
 
         self.play(FadeOut(examples), FadeOut(examples_title), FadeOut(formula2))
@@ -206,4 +291,4 @@ class T2SComplexityExplosionSimple(Scene):
 
         self.play(FadeOut(final_title), FadeOut(final_group))
         self.play(Write(end))
-        self.wait(3)
+        self.wait(3) 
