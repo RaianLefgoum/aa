@@ -1,6 +1,60 @@
-%%manim -qm -v WARNING T2SSettlementEngineGlobalView
+%%manim -qm -v WARNING T2S_RTS_to_NTS_WithMCM
 
 from manim import *
+import numpy as np
+import math
+
+
+def return_suns(sun_origin):
+    sun_opacity = ValueTracker(0.2)
+    COLORS_SUN = [YELLOW_A, YELLOW_B, YELLOW_C, YELLOW_D]
+
+    def get_sun(i):
+        return lambda: Circle(
+            radius=0.6 * (i + 1),
+            color=COLORS_SUN[i],
+            stroke_width=0
+        ).set_opacity(
+            sun_opacity.get_value() * (i + 1) / 3
+        ).move_to(sun_origin)
+
+    suns = Group(*[always_redraw(get_sun(i)) for i in range(len(COLORS_SUN))])
+    return suns, sun_opacity
+
+
+class TransactionRect(VGroup):
+    def __init__(
+        self,
+        attribute1_name, attribute1_value,
+        attribute2_name, attribute2_value,
+        width=4.2, height=1.2,
+        stroke_color=WHITE,
+        fill_color=BLUE_E,
+        fill_opacity=0.08,
+        font_size=26,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+
+        rect = Rectangle(
+            width=width,
+            height=height,
+            stroke_color=stroke_color,
+            stroke_width=2.5,
+            fill_color=fill_color,
+            fill_opacity=fill_opacity,
+            z_index=1,
+        )
+
+        line1 = Text(f"{attribute1_name}: {attribute1_value}", font_size=font_size)
+        line2 = Text(f"{attribute2_name}: {attribute2_value}", font_size=font_size)
+
+        lines = VGroup(line1, line2).arrange(DOWN, aligned_edge=LEFT, buff=0.15)
+        lines.move_to(rect.get_center()).align_to(rect, LEFT).shift(RIGHT * 0.28)
+
+        self.add(rect, lines)
+        self.rect = rect
+        self.lines = lines
 
 
 class Tank(VGroup):
@@ -57,7 +111,7 @@ class Tank(VGroup):
         return Transform(self, new_tank)
 
 
-class T2SSettlementEngineGlobalView(Scene):
+class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
 
     def make_engine(self):
         engine_box = RoundedRectangle(
@@ -72,8 +126,6 @@ class T2SSettlementEngineGlobalView(Scene):
 
         mom = Text("MOM", font_size=34, color=YELLOW)
 
-        # Put your image in the same directory as your notebook/script.
-        # Rename your file to: t2s_logo.png
         t2s_logo = ImageMobject("t2s_logo.png")
         t2s_logo.set_height(0.55)
 
@@ -111,24 +163,11 @@ class T2SSettlementEngineGlobalView(Scene):
         if side == "left":
             start = source_tank.border.get_left()
             end = target_tank.border.get_left()
-
-            path = CubicBezier(
-                start,
-                start + LEFT * 1.45,
-                end + LEFT * 1.45,
-                end,
-            )
-
+            path = CubicBezier(start, start + LEFT * 1.45, end + LEFT * 1.45, end)
         else:
             start = source_tank.border.get_right()
             end = target_tank.border.get_right()
-
-            path = CubicBezier(
-                start,
-                start + RIGHT * 1.45,
-                end + RIGHT * 1.45,
-                end,
-            )
+            path = CubicBezier(start, start + RIGHT * 1.45, end + RIGHT * 1.45, end)
 
         trail = VMobject()
         trail.set_points(path.points)
@@ -141,20 +180,434 @@ class T2SSettlementEngineGlobalView(Scene):
         self.play(Flash(end, color=color, flash_radius=0.28), run_time=0.22)
         self.play(FadeOut(dot), FadeOut(trail), run_time=0.15)
 
-    def construct(self):
-        self.camera.background_color = "#0b1020"
+    def small_data_card(self, text, color=BLUE, width=2.6):
+        box = RoundedRectangle(
+            width=width,
+            height=0.48,
+            corner_radius=0.08,
+            stroke_color=color,
+            stroke_width=1.5,
+            fill_color="#172448",
+            fill_opacity=0.92,
+        )
+        label = Text(text, font_size=14, color=WHITE).move_to(box)
+        return VGroup(box, label)
 
-        title = Text("T2S Night Settlement Engine", font_size=40)
+    def metric_box(self, title, value, color):
+        box = RoundedRectangle(
+            width=2.25,
+            height=0.95,
+            corner_radius=0.12,
+            stroke_color=color,
+            stroke_width=2,
+            fill_color="#101b36",
+            fill_opacity=0.95,
+        )
+        t = Text(title, font_size=14, color=GRAY_B)
+        v = Text(value, font_size=22, color=color, weight=BOLD)
+        VGroup(t, v).arrange(DOWN, buff=0.08).move_to(box)
+        return VGroup(box, t, v)
+
+    def mcm_graph_animation(self, incoming_cards):
+        mcm_title = Text("MCM: Metrics Computation Module", font_size=34, color=BLUE)
+        mcm_title.to_edge(UP)
+
         subtitle = Text(
-            "MOM chooses which transactions can settle together.",
+            "Transactions + resources are converted into a transaction graph",
             font_size=24,
             color=GRAY_B,
+        ).next_to(mcm_title, DOWN, buff=0.25)
+
+        self.play(FadeIn(mcm_title), FadeIn(subtitle), run_time=0.8)
+
+        tx_input_title = Text("Pending transactions", font_size=22, color=YELLOW)
+        res_input_title = Text("Resources", font_size=22, color=GREEN)
+
+        tx_inputs = VGroup(
+            self.small_data_card("T1: A → B", YELLOW),
+            self.small_data_card("T2: C → A", YELLOW),
+            self.small_data_card("T3: B → C", YELLOW),
+            self.small_data_card("T4: A → C", YELLOW),
+        ).arrange(DOWN, buff=0.18)
+
+        res_inputs = VGroup(
+            self.small_data_card("Cash accounts", GREEN),
+            self.small_data_card("Securities accounts", BLUE),
+            self.small_data_card("Available liquidity", GREEN),
+            self.small_data_card("Available securities", BLUE),
+        ).arrange(DOWN, buff=0.18)
+
+        tx_group = VGroup(tx_input_title, tx_inputs).arrange(DOWN, buff=0.25)
+        res_group = VGroup(res_input_title, res_inputs).arrange(DOWN, buff=0.25)
+
+        tx_group.move_to(LEFT * 5.2 + DOWN * 0.25)
+        res_group.move_to(RIGHT * 5.2 + DOWN * 0.25)
+
+        graph_box = RoundedRectangle(
+            width=4.8,
+            height=3.7,
+            corner_radius=0.18,
+            stroke_color=BLUE,
+            stroke_width=3,
+            fill_color="#101b36",
+            fill_opacity=0.96,
+        ).move_to(DOWN * 0.2)
+
+        graph_label = Text("Transaction graph", font_size=25, color=BLUE)
+        graph_label.next_to(graph_box, UP, buff=0.15)
+
+        self.play(
+            LaggedStart(*[FadeIn(c, shift=RIGHT * 0.15) for c in tx_inputs], lag_ratio=0.08),
+            FadeIn(tx_input_title),
+            LaggedStart(*[FadeIn(c, shift=LEFT * 0.15) for c in res_inputs], lag_ratio=0.08),
+            FadeIn(res_input_title),
+            Create(graph_box),
+            FadeIn(graph_label),
+            run_time=1.1,
         )
 
-        VGroup(title, subtitle).arrange(DOWN, buff=0.2).to_edge(UP)
+        arrows_to_graph = VGroup(
+            Arrow(tx_group.get_right(), graph_box.get_left(), buff=0.25, color=YELLOW, stroke_width=3),
+            Arrow(res_group.get_left(), graph_box.get_right(), buff=0.25, color=GREEN, stroke_width=3),
+        )
 
-        self.play(Write(title), FadeIn(subtitle))
-        self.wait(1)
+        self.play(LaggedStart(*[GrowArrow(a) for a in arrows_to_graph], lag_ratio=0.2))
+
+        nodes = {}
+        node_positions = {
+            "A": graph_box.get_center() + LEFT * 1.25 + UP * 0.65,
+            "B": graph_box.get_center() + RIGHT * 1.25 + UP * 0.65,
+            "C": graph_box.get_center() + DOWN * 0.75,
+        }
+
+        graph_nodes = VGroup()
+        for name, pos in node_positions.items():
+            circle = Circle(
+                radius=0.30,
+                color=WHITE,
+                fill_color="#23345f",
+                fill_opacity=0.95,
+            ).move_to(pos)
+            label = Text(name, font_size=21, color=WHITE).move_to(circle)
+            group = VGroup(circle, label)
+            nodes[name] = group
+            graph_nodes.add(group)
+
+        edge_specs = [
+            ("A", "B", "T1"),
+            ("C", "A", "T2"),
+            ("B", "C", "T3"),
+            ("A", "C", "T4"),
+        ]
+
+        graph_edges = VGroup()
+        edge_labels = VGroup()
+
+        for u, v, label in edge_specs:
+            edge = Arrow(
+                nodes[u].get_center(),
+                nodes[v].get_center(),
+                buff=0.38,
+                stroke_width=3,
+                color=BLUE_B,
+                max_tip_length_to_length_ratio=0.12,
+            )
+            txt = Text(label, font_size=13, color=YELLOW)
+            txt.move_to(edge.get_center() + UP * 0.16)
+            graph_edges.add(edge)
+            edge_labels.add(txt)
+
+        self.play(
+            LaggedStart(*[FadeIn(n, scale=0.8) for n in graph_nodes], lag_ratio=0.12),
+            run_time=0.8,
+        )
+
+        self.play(
+            LaggedStart(*[GrowArrow(e) for e in graph_edges], lag_ratio=0.15),
+            LaggedStart(*[FadeIn(t) for t in edge_labels], lag_ratio=0.15),
+            run_time=1.0,
+        )
+
+        build_text = Text(
+            "Accounts become nodes. Transactions become directed arcs.",
+            font_size=25,
+            color=WHITE,
+        ).to_edge(DOWN)
+
+        self.play(FadeIn(build_text))
+        self.wait(1.0)
+
+        self.play(
+            FadeOut(tx_group),
+            FadeOut(res_group),
+            FadeOut(arrows_to_graph),
+            FadeOut(build_text),
+            graph_box.animate.scale(0.92).shift(LEFT * 2.7),
+            graph_label.animate.shift(LEFT * 2.7),
+            graph_nodes.animate.shift(LEFT * 2.7),
+            graph_edges.animate.shift(LEFT * 2.7),
+            edge_labels.animate.shift(LEFT * 2.7),
+            run_time=1.0,
+            rate_func=smooth,
+        )
+
+        metrics_title = Text("Computed graph metrics", font_size=25, color=BLUE)
+        metrics = VGroup(
+            self.metric_box("nodes", "3", BLUE),
+            self.metric_box("arcs", "4", YELLOW),
+            self.metric_box("avg arcs / node", "1.33", GREEN),
+            self.metric_box("density", "0.67", PURPLE),
+            self.metric_box("cycles", "detected", GREEN),
+            self.metric_box("imbalance", "medium", ORANGE),
+        ).arrange_in_grid(rows=3, cols=2, buff=0.25)
+
+        metric_group = VGroup(metrics_title, metrics).arrange(DOWN, buff=0.35)
+        metric_group.move_to(RIGHT * 3.1 + DOWN * 0.15)
+
+        metric_arrow = Arrow(
+            graph_box.get_right(),
+            metric_group.get_left(),
+            buff=0.3,
+            color=BLUE,
+            stroke_width=4,
+        )
+
+        self.play(GrowArrow(metric_arrow))
+        self.play(
+            LaggedStart(*[FadeIn(m, shift=UP * 0.12) for m in metrics], lag_ratio=0.12),
+            FadeIn(metrics_title),
+            run_time=1.2,
+        )
+
+        runtime_box = RoundedRectangle(
+            width=5.4,
+            height=1.1,
+            corner_radius=0.14,
+            stroke_color=YELLOW,
+            stroke_width=2.5,
+            fill_color="#2b2410",
+            fill_opacity=0.92,
+        ).to_edge(DOWN, buff=0.45)
+
+        runtime_text = Text(
+            "These metrics can help predict MOM runtime before launching optimization.",
+            font_size=22,
+            color=YELLOW,
+        ).move_to(runtime_box)
+
+        self.play(FadeIn(runtime_box), FadeIn(runtime_text))
+        self.wait(1.4)
+
+        self.play(
+            FadeOut(mcm_title),
+            FadeOut(subtitle),
+            FadeOut(graph_box),
+            FadeOut(graph_label),
+            FadeOut(graph_nodes),
+            FadeOut(graph_edges),
+            FadeOut(edge_labels),
+            FadeOut(metric_arrow),
+            FadeOut(metric_group),
+            FadeOut(runtime_box),
+            FadeOut(runtime_text),
+            run_time=0.9,
+        )
+
+    def construct(self):
+        self.camera.background_color = "#0b1020"
+        self.camera.frame.scale(2)
+
+        ease = rate_functions.ease_in_out_sine
+
+        suns, sun_opacity = return_suns(self.camera.frame.get_corner(UP + LEFT))
+        sun_opacity.set_value(0.0)
+        self.add(suns)
+
+        title = Text("T2S: Real-Time Settlement during the day", font_size=34).to_edge(UP)
+
+        rts_box = Rectangle(
+            width=3.8,
+            height=2.2,
+            fill_color=BLACK,
+            fill_opacity=1.0,
+            stroke_color=WHITE,
+            stroke_width=2.5
+        )
+
+        rts_label = Text("RTS", color=WHITE, font_size=36)
+        rts_label.move_to(rts_box.get_center() + 0.7 * LEFT)
+
+        rts_image = ImageMobject("t2s_logo.png").scale(0.07)
+        rts_image.next_to(rts_label, RIGHT)
+
+        rts = Group(rts_box, rts_label, rts_image).move_to(ORIGIN)
+
+        mouth_ref = Arrow(LEFT * 6.5, rts.get_left(), buff=0.25, stroke_width=4)
+        mouth = mouth_ref.get_start() + RIGHT * 0.35
+
+        self.play(FadeIn(title), FadeIn(rts), run_time=0.5)
+
+        tx_data = [
+            ("ID", f"T{str(i).zfill(3)}", "Cash", f"€{v}") for i, v in zip(
+                range(1, 8),
+                [200, 1250, 75, 3000, 580, 2100, 410, 9000]
+            )
+        ]
+
+        outcomes = [
+            True, False, True, False, False,
+            True, False, False, True, False,
+            False, True, False, False, True
+        ]
+
+        input_y = 0.0
+        start_x = -12.0
+        spawn_gap = 1.6
+        approach_rt = 0.8
+        approach_arc = 0.12
+        center_rt = 0.4
+
+        settled_y = 2.2
+        onhold_y = -2.2
+        base_x = 3.8
+
+        sample_card = TransactionRect(*tx_data[0])
+        card_w = sample_card.rect.width
+        lane_dx = card_w + 0.35
+
+        DRIFT_SPEED_RTS = 6.0
+
+        def add_right_drift(mob, speed=2.0):
+            mob.add_updater(lambda m, dt: m.shift(RIGHT * speed * dt))
+
+        onhold_cards = []
+
+        for i, ((a1n, a1v, a2n, a2v), ok) in enumerate(zip(tx_data, outcomes)):
+            if not ok:
+                tx = TransactionRect(a1n, a1v, a2n, a2v).scale(0.8)
+                tx.move_to([start_x - i * spawn_gap - 5, input_y, 0])
+                self.add(tx)
+                onhold_cards.append(tx)
+
+        for i, ((a1n, a1v, a2n, a2v), ok) in enumerate(zip(tx_data, outcomes)):
+            tx = TransactionRect(a1n, a1v, a2n, a2v).scale(0.8)
+            tx.move_to([start_x - i * spawn_gap, input_y, 0])
+            self.add(tx)
+
+            self.play(
+                AnimationGroup(
+                    FadeIn(tx, run_time=0.25),
+                    tx.animate.move_to([mouth[0], input_y, 0])
+                    .set_run_time(approach_rt)
+                    .set_path_arc(approach_arc)
+                    .set_rate_func(ease),
+                    lag_ratio=0.05,
+                ),
+                run_time=0.6
+            )
+
+            self.play(tx.animate.move_to(rts_box.get_center()).set_run_time(center_rt).set_rate_func(ease))
+            self.play(Indicate(rts_box, scale_factor=1.04), run_time=0.2)
+
+            if ok:
+                self.play(tx.rect.animate.set_stroke(GREEN, width=4), run_time=0.12)
+                self.play(
+                    tx.animate.move_to([base_x + lane_dx, settled_y, 0])
+                    .set_run_time(0.7)
+                    .set_rate_func(ease)
+                )
+                add_right_drift(tx, DRIFT_SPEED_RTS)
+            else:
+                self.play(tx.rect.animate.set_stroke(YELLOW, width=4), run_time=0.12)
+                self.play(
+                    tx.animate.move_to([base_x + lane_dx, onhold_y, 0])
+                    .set_run_time(0.7)
+                    .set_rate_func(ease)
+                )
+                add_right_drift(tx, DRIFT_SPEED_RTS)
+
+            if i == 1:
+                self.play(sun_opacity.animate.set_value(0.3), run_time=0.5)
+            if i == 2:
+                self.play(sun_opacity.animate.set_value(0.6), run_time=0.5)
+            if i == 4:
+                self.play(sun_opacity.animate.set_value(1), run_time=0.5)
+            if i == 6:
+                self.play(sun_opacity.animate.set_value(0.5), run_time=0.5)
+            if i == 8:
+                self.play(sun_opacity.animate.set_value(0), run_time=0.5)
+                break
+
+        self.wait(0.5)
+
+        for tx in onhold_cards:
+            tx.clear_updaters()
+
+        transition_text = Text(
+            "Unsettled transactions are carried over to Night-Time Settlement",
+            font_size=30,
+            color=YELLOW
+        ).to_edge(DOWN)
+
+        self.play(FadeIn(transition_text), run_time=0.6)
+
+        night_overlay = Rectangle(
+            width=40,
+            height=25,
+            fill_color="#050816",
+            fill_opacity=0.0,
+            stroke_width=0
+        )
+
+        self.add(night_overlay)
+
+        self.play(
+            sun_opacity.animate.set_value(0),
+            night_overlay.animate.set_fill("#050816", opacity=0.72),
+            title.animate.become(Text("T2S: Night-Time Settlement", font_size=40).to_edge(UP)),
+            FadeOut(rts),
+            run_time=1.6,
+            rate_func=smooth
+        )
+
+        moon = Circle(
+            radius=0.45,
+            color=GRAY_B,
+            fill_color=GRAY_B,
+            fill_opacity=0.9,
+            stroke_width=0
+        ).move_to(self.camera.frame.get_corner(UP + RIGHT) + LEFT * 0.8 + DOWN * 0.6)
+
+        moon_cut = Circle(
+            radius=0.45,
+            color="#050816",
+            fill_color="#050816",
+            fill_opacity=1,
+            stroke_width=0
+        ).move_to(moon.get_center() + RIGHT * 0.18 + UP * 0.06)
+
+        moon_group = VGroup(moon, moon_cut)
+
+        clock = Text("22:30", font_size=36, color=GRAY_B)
+        clock.next_to(moon_group, DOWN, buff=0.3)
+
+        self.play(
+            FadeIn(moon_group, shift=DOWN * 0.2),
+            FadeIn(clock),
+            FadeOut(transition_text),
+            run_time=0.8
+        )
+
+        self.play(
+            self.camera.frame.animate.scale(0.7).move_to(ORIGIN),
+            run_time=1.2,
+            rate_func=smooth
+        )
+
+        incoming_cards = VGroup(*onhold_cards[:4])
+        self.play(FadeOut(incoming_cards), run_time=0.4)
+
+        self.mcm_graph_animation(incoming_cards)
 
         cash = {"A": 80, "B": 40, "C": 70}
         securities = {"A": 30, "B": 80, "C": 50}
@@ -193,9 +646,8 @@ class T2SSettlementEngineGlobalView(Scene):
             LaggedStart(*[FadeIn(t) for t in cash_group], lag_ratio=0.12),
             LaggedStart(*[FadeIn(t) for t in sec_group], lag_ratio=0.12),
             FadeIn(engine),
+            run_time=1.2
         )
-
-        self.wait(0.8)
 
         transactions = [
             ("A", "B", 30, True),
@@ -213,7 +665,7 @@ class T2SSettlementEngineGlobalView(Scene):
         tx_cards.move_to(engine_box.get_center() + DOWN * 0.35)
 
         intro = Text(
-            "Pending transactions enter MOM.",
+            "MOM receives graph metrics and pending transactions.",
             font_size=24,
             color=YELLOW,
         ).to_edge(DOWN)
@@ -225,8 +677,8 @@ class T2SSettlementEngineGlobalView(Scene):
                 lag_ratio=0.12,
             )
         )
-        self.wait(1.2)
 
+        self.wait(1.0)
         self.play(FadeOut(intro))
 
         thinking = Text(
@@ -256,8 +708,6 @@ class T2SSettlementEngineGlobalView(Scene):
             )
         )
 
-        self.wait(1.2)
-
         decision = Text(
             "Green settles now. Red waits.",
             font_size=25,
@@ -266,7 +716,6 @@ class T2SSettlementEngineGlobalView(Scene):
 
         self.play(Transform(thinking, decision))
         self.wait(1.2)
-
         self.play(FadeOut(thinking))
 
         selected_plan = VGroup(
@@ -306,12 +755,7 @@ class T2SSettlementEngineGlobalView(Scene):
 
             self.play(Transform(execute, tx_text), run_time=0.35)
 
-            self.outside_bezier_transfer(
-                cash_tanks[buyer],
-                cash_tanks[seller],
-                GREEN,
-                side="left",
-            )
+            self.outside_bezier_transfer(cash_tanks[buyer], cash_tanks[seller], GREEN, side="left")
 
             cash[buyer] -= amount
             cash[seller] += amount
@@ -322,12 +766,7 @@ class T2SSettlementEngineGlobalView(Scene):
                 run_time=0.4,
             )
 
-            self.outside_bezier_transfer(
-                sec_tanks[seller],
-                sec_tanks[buyer],
-                BLUE,
-                side="right",
-            )
+            self.outside_bezier_transfer(sec_tanks[seller], sec_tanks[buyer], BLUE, side="right")
 
             securities[seller] -= amount
             securities[buyer] += amount
@@ -338,20 +777,18 @@ class T2SSettlementEngineGlobalView(Scene):
                 run_time=0.4,
             )
 
-            self.wait(0.1)
-
         self.play(FadeOut(execute), FadeOut(selected_plan))
 
         recap = VGroup(
             Text("Key idea", font_size=34, color=YELLOW),
             Text(
-                "MOM optimizes the whole batch,\nnot one transaction at a time.",
+                "MCM measures the graph.\nMOM optimizes the batch.",
                 font_size=29,
                 color=WHITE,
                 line_spacing=1.15,
             ),
             Text(
-                "Then T2S executes the cash and securities movements.",
+                "Then T2S executes cash and securities movements.",
                 font_size=25,
                 color=GRAY_B,
             ),
@@ -366,131 +803,10 @@ class T2SSettlementEngineGlobalView(Scene):
 
         self.play(FadeOut(recap))
 
-        extra_title = Text(
-            "In practice, the decision is even richer.",
-            font_size=34,
+        final = Text(
+            "This is why settlement is an optimization problem.",
+            font_size=36,
             color=YELLOW,
-        ).move_to(UP * 2.2)
-
-        self.play(Write(extra_title))
-        self.wait(0.8)
-
-        auto_box = RoundedRectangle(
-            width=5.2,
-            height=1.35,
-            corner_radius=0.12,
-            stroke_color=BLUE,
-            stroke_width=2.5,
-            fill_color="#10213d",
-            fill_opacity=0.9,
-        ).move_to(UP * 0.75)
-
-        auto_title = Text("Auto-collateralisation", font_size=25, color=BLUE)
-        auto_text = Text(
-            "MOM may generate extra cash liquidity\nby using eligible securities as collateral.",
-            font_size=20,
-            color=WHITE,
-            line_spacing=1.1,
-        )
-
-        auto_group = VGroup(auto_title, auto_text)
-        auto_group.arrange(DOWN, buff=0.18)
-        auto_group.move_to(auto_box)
-
-        self.play(FadeIn(auto_box), FadeIn(auto_group))
-        self.wait(1.2)
-
-
-        partial_box = RoundedRectangle(
-            width=5.2,
-            height=1.45,
-            corner_radius=0.12,
-            stroke_color=YELLOW,
-            stroke_width=2.5,
-            fill_color="#2b2410",
-            fill_opacity=0.9,
-        ).move_to(DOWN * 1.05)
-
-        partial_title = Text("Partial settlement", font_size=25, color=YELLOW)
-        partial_text = Text(
-            "A transaction does not have to be all-or-nothing.\nMOM may settle only part of it.",
-            font_size=20,
-            color=WHITE,
-            line_spacing=1.1,
-        )
-
-        partial_group = VGroup(partial_title, partial_text)
-        partial_group.arrange(DOWN, buff=0.18)
-        partial_group.move_to(partial_box)
-
-        self.play(FadeIn(partial_box), FadeIn(partial_group))
-        self.wait(0.6)
-
-        full_tx = RoundedRectangle(
-            width=3.0,
-            height=0.45,
-            corner_radius=0.08,
-            stroke_color=YELLOW,
-            stroke_width=2,
-            fill_color="#1a2140",
-            fill_opacity=0.95,
-        ).move_to(DOWN * 2.45)
-
-        full_tx_text = Text("Transaction quantity: 100", font_size=18).move_to(full_tx)
-
-        self.play(FadeIn(full_tx), FadeIn(full_tx_text))
-        self.wait(0.5)
-
-        part_settle = Rectangle(
-            width=1.8,
-            height=0.45,
-            stroke_width=0,
-            fill_color=GREEN,
-            fill_opacity=0.75,
-        )
-
-        part_wait = Rectangle(
-            width=1.2,
-            height=0.45,
-            stroke_width=0,
-            fill_color=RED,
-            fill_opacity=0.65,
-        )
-
-        split_group = VGroup(part_settle, part_wait).arrange(RIGHT, buff=0)
-        split_group.move_to(full_tx)
-
-        settle_now = Text("60 settle", font_size=14, color=GREEN)
-        wait_later = Text("40 wait", font_size=14, color=RED)
-
-        settle_now.next_to(part_settle, DOWN, buff=0.12)
-        wait_later.next_to(part_wait, DOWN, buff=0.12)
-
-        self.play(FadeOut(full_tx_text), FadeIn(split_group))
-        self.play(FadeIn(settle_now), FadeIn(wait_later))
-        self.wait(1.2)
-
-        richer_decision = Text(
-            "More liquidity choices + non-binary quantities\n= more decisions for MOM to explore.",
-            font_size=25,
-            color=GRAY_B,
-            line_spacing=1.15,
-        ).to_edge(DOWN)
-
-        self.play(FadeIn(richer_decision))
-        self.wait(2.5)
-
-        self.play(
-            FadeOut(extra_title),
-            FadeOut(auto_box),
-            FadeOut(auto_group),
-            FadeOut(partial_box),
-            FadeOut(partial_group),
-            FadeOut(full_tx),
-            FadeOut(split_group),
-            FadeOut(settle_now),
-            FadeOut(wait_later),
-            FadeOut(richer_decision),
         )
 
         self.play(
@@ -498,12 +814,9 @@ class T2SSettlementEngineGlobalView(Scene):
             FadeOut(sec_group),
             FadeOut(cash_title),
             FadeOut(sec_title),
-        )
-
-        final = Text(
-            "This is why settlement is an optimization problem.",
-            font_size=36,
-            color=YELLOW,
+            FadeOut(moon_group),
+            FadeOut(clock),
+            FadeOut(title),
         )
 
         self.play(Write(final))
