@@ -1,5 +1,6 @@
 %%manim -qm -v WARNING T2S_RTS_to_NTS_WithMCM
 
+
 from manim import *
 import numpy as np
 import math
@@ -25,20 +26,26 @@ def return_suns(sun_origin):
 class TransactionRect(VGroup):
     def __init__(
         self,
-        attribute1_name, attribute1_value,
-        attribute2_name, attribute2_value,
-        width=4.2, height=1.2,
+        *attributes,
+        width=4.75, height=1.55,
         stroke_color=WHITE,
         fill_color=BLUE_E,
         fill_opacity=0.08,
-        font_size=26,
+        font_size=22,
         **kwargs
     ):
         super().__init__(**kwargs)
 
+        if len(attributes) % 2 != 0:
+            raise ValueError("TransactionRect expects name/value attribute pairs")
+
+        pairs = list(zip(attributes[0::2], attributes[1::2]))
+        n_lines = len(pairs)
+        actual_height = max(1.15, 0.43 * n_lines + 0.38)
+
         rect = Rectangle(
             width=width,
-            height=height,
+            height=actual_height,
             stroke_color=stroke_color,
             stroke_width=2.5,
             fill_color=fill_color,
@@ -46,10 +53,11 @@ class TransactionRect(VGroup):
             z_index=1,
         )
 
-        line1 = Text(f"{attribute1_name}: {attribute1_value}", font_size=font_size)
-        line2 = Text(f"{attribute2_name}: {attribute2_value}", font_size=font_size)
+        lines = VGroup(*[
+            Text(f"{name}: {value}", font_size=font_size)
+            for name, value in pairs
+        ]).arrange(DOWN, aligned_edge=LEFT, buff=0.08)
 
-        lines = VGroup(line1, line2).arrange(DOWN, aligned_edge=LEFT, buff=0.15)
         lines.move_to(rect.get_center()).align_to(rect, LEFT).shift(RIGHT * 0.28)
 
         self.add(rect, lines)
@@ -208,13 +216,88 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
         VGroup(t, v).arrange(DOWN, buff=0.08).move_to(box)
         return VGroup(box, t, v)
 
+    def make_resource_graph(self, graph_title, center, color, node_labels, edge_specs, curved_edges=None):
+        curved_edges = curved_edges or {}
+        graph_box = RoundedRectangle(
+            width=3.25,
+            height=2.35,
+            corner_radius=0.18,
+            stroke_color=color,
+            stroke_width=2.5,
+            fill_color="#101b36",
+            fill_opacity=0.96,
+        ).move_to(center)
+
+        title = Text(graph_title, font_size=16, color=color)
+        title.next_to(graph_box, UP, buff=0.10)
+
+        positions = {
+            "A": graph_box.get_center() + LEFT * 0.78 + UP * 0.38,
+            "B": graph_box.get_center() + RIGHT * 0.78 + UP * 0.38,
+            "C": graph_box.get_center() + DOWN * 0.52,
+        }
+
+        nodes = {}
+        node_group = VGroup()
+        for name, pos in positions.items():
+            circle = Circle(
+                radius=0.22,
+                color=WHITE,
+                fill_color="#23345f",
+                fill_opacity=0.95,
+            ).move_to(pos)
+            label = Text(node_labels[name], font_size=9, color=WHITE).move_to(circle)
+            group = VGroup(circle, label)
+            nodes[name] = group
+            node_group.add(group)
+
+        edge_group = VGroup()
+        label_group = VGroup()
+        label_offsets = [UP * 0.15, DOWN * 0.15, LEFT * 0.15, RIGHT * 0.15]
+        for k, (u, v, label) in enumerate(edge_specs):
+            curve_angle = curved_edges.get(label, 0)
+            start = nodes[u].get_center()
+            end = nodes[v].get_center()
+
+            if curve_angle:
+                # Curved arrows make opposite-direction transactions clearly distinct.
+                edge = CurvedArrow(
+                    start,
+                    end,
+                    angle=curve_angle,
+                    color=color,
+                    stroke_width=2.0,
+                    tip_length=0.12,
+                )
+                label_direction = normalize(edge.get_center() - graph_box.get_center())
+                if np.linalg.norm(label_direction) < 1e-6:
+                    label_direction = UP
+                label_pos = edge.get_center() + label_direction * 0.18
+            else:
+                edge = Arrow(
+                    start,
+                    end,
+                    buff=0.30,
+                    stroke_width=2.0,
+                    color=color,
+                    max_tip_length_to_length_ratio=0.12,
+                )
+                label_pos = edge.get_center() + label_offsets[k % len(label_offsets)]
+
+            txt = Text(label, font_size=9, color=YELLOW)
+            txt.move_to(label_pos)
+            edge_group.add(edge)
+            label_group.add(txt)
+
+        return VGroup(graph_box, title, node_group, edge_group, label_group), graph_box, node_group, edge_group, label_group
+
     def mcm_graph_animation(self, incoming_cards):
         mcm_title = Text("MCM: Metrics Computation Module", font_size=34, color=BLUE)
         mcm_title.to_edge(UP)
 
         subtitle = Text(
-            "Transactions + resources are converted into a transaction graph",
-            font_size=24,
+            "Cash and securities resources generate two complementary transaction graphs",
+            font_size=22,
             color=GRAY_B,
         ).next_to(mcm_title, DOWN, buff=0.25)
 
@@ -224,28 +307,28 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
         res_input_title = Text("Resources", font_size=22, color=GREEN)
 
         tx_inputs = VGroup(
-            self.small_data_card("T1: A → B", YELLOW),
-            self.small_data_card("T2: C → A", YELLOW),
-            self.small_data_card("T3: B → C", YELLOW),
-            self.small_data_card("T4: A → C", YELLOW),
+            self.small_data_card("T1: cash + security", YELLOW),
+            self.small_data_card("T2: cash only", YELLOW),
+            self.small_data_card("T3: security only", YELLOW),
+            self.small_data_card("T4: cash + security", YELLOW),
         ).arrange(DOWN, buff=0.18)
 
         res_inputs = VGroup(
             self.small_data_card("Cash accounts", GREEN),
             self.small_data_card("Securities accounts", BLUE),
-            self.small_data_card("Available liquidity", GREEN),
-            self.small_data_card("Available securities", BLUE),
         ).arrange(DOWN, buff=0.18)
 
         tx_group = VGroup(tx_input_title, tx_inputs).arrange(DOWN, buff=0.25)
         res_group = VGroup(res_input_title, res_inputs).arrange(DOWN, buff=0.25)
 
-        tx_group.move_to(LEFT * 5.2 + DOWN * 0.25)
-        res_group.move_to(RIGHT * 5.2 + DOWN * 0.25)
+        tx_group.scale(0.90)
+        res_group.scale(0.90)
+        tx_group.move_to(LEFT * 6.15 + DOWN * 0.25)
+        res_group.move_to(RIGHT * 6.15 + DOWN * 0.25)
 
-        graph_box = RoundedRectangle(
-            width=4.8,
-            height=3.7,
+        graph_placeholder = RoundedRectangle(
+            width=4.45,
+            height=3.25,
             corner_radius=0.18,
             stroke_color=BLUE,
             stroke_width=3,
@@ -253,135 +336,145 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
             fill_opacity=0.96,
         ).move_to(DOWN * 0.2)
 
-        graph_label = Text("Transaction graph", font_size=25, color=BLUE)
-        graph_label.next_to(graph_box, UP, buff=0.15)
+        graph_label = Text("Two resource graphs", font_size=22, color=BLUE)
+        graph_label.next_to(graph_placeholder, UP, buff=0.15)
 
         self.play(
             LaggedStart(*[FadeIn(c, shift=RIGHT * 0.15) for c in tx_inputs], lag_ratio=0.08),
             FadeIn(tx_input_title),
             LaggedStart(*[FadeIn(c, shift=LEFT * 0.15) for c in res_inputs], lag_ratio=0.08),
             FadeIn(res_input_title),
-            Create(graph_box),
+            Create(graph_placeholder),
             FadeIn(graph_label),
             run_time=1.1,
         )
 
+        # Shorter, cleaner arrows: they stop at the border of the graph area
+        # instead of visually entering the two graph boxes.
         arrows_to_graph = VGroup(
-            Arrow(tx_group.get_right(), graph_box.get_left(), buff=0.25, color=YELLOW, stroke_width=3),
-            Arrow(res_group.get_left(), graph_box.get_right(), buff=0.25, color=GREEN, stroke_width=3),
+            Arrow(
+                tx_group.get_right() + RIGHT * 0.05,
+                graph_placeholder.get_left() + LEFT * 0.05,
+                buff=0.55,
+                color=YELLOW,
+                stroke_width=2.4,
+                max_tip_length_to_length_ratio=0.08,
+            ),
+            Arrow(
+                res_group.get_left() + LEFT * 0.05,
+                graph_placeholder.get_right() + RIGHT * 0.05,
+                buff=0.55,
+                color=GREEN,
+                stroke_width=2.4,
+                max_tip_length_to_length_ratio=0.08,
+            ),
         )
 
-        self.play(LaggedStart(*[GrowArrow(a) for a in arrows_to_graph], lag_ratio=0.2))
+        self.play(LaggedStart(*[Create(a) for a in arrows_to_graph], lag_ratio=0.2))
 
-        nodes = {}
-        node_positions = {
-            "A": graph_box.get_center() + LEFT * 1.25 + UP * 0.65,
-            "B": graph_box.get_center() + RIGHT * 1.25 + UP * 0.65,
-            "C": graph_box.get_center() + DOWN * 0.75,
-        }
-
-        graph_nodes = VGroup()
-        for name, pos in node_positions.items():
-            circle = Circle(
-                radius=0.30,
-                color=WHITE,
-                fill_color="#23345f",
-                fill_opacity=0.95,
-            ).move_to(pos)
-            label = Text(name, font_size=21, color=WHITE).move_to(circle)
-            group = VGroup(circle, label)
-            nodes[name] = group
-            graph_nodes.add(group)
-
-        edge_specs = [
-            ("A", "B", "T1"),
-            ("C", "A", "T2"),
-            ("B", "C", "T3"),
-            ("A", "C", "T4"),
-        ]
-
-        graph_edges = VGroup()
-        edge_labels = VGroup()
-
-        for u, v, label in edge_specs:
-            edge = Arrow(
-                nodes[u].get_center(),
-                nodes[v].get_center(),
-                buff=0.38,
-                stroke_width=3,
-                color=BLUE_B,
-                max_tip_length_to_length_ratio=0.12,
-            )
-            txt = Text(label, font_size=13, color=YELLOW)
-            txt.move_to(edge.get_center() + UP * 0.16)
-            graph_edges.add(edge)
-            edge_labels.add(txt)
+        cash_graph, cash_box, cash_nodes, cash_edges, cash_edge_labels = self.make_resource_graph(
+            "Cash resource graph",
+            LEFT * 1.78 + DOWN * 0.20,
+            GREEN,
+            {"A": "Cash A", "B": "Cash B", "C": "Cash C"},
+            [("A", "B", "T1"), ("C", "A", "T2"), ("A", "C", "T4")],
+            curved_edges={"T2": 0.6, "T4": 0.6},
+        )
+        sec_graph, sec_box, sec_nodes, sec_edges, sec_edge_labels = self.make_resource_graph(
+            "Security resource graph",
+            RIGHT * 1.78 + DOWN * 0.20,
+            BLUE,
+            {"A": "Sec A", "B": "Sec B", "C": "Sec C"},
+            [("B", "A", "T1"), ("C", "B", "T3"), ("C", "A", "T4")],
+        )
 
         self.play(
-            LaggedStart(*[FadeIn(n, scale=0.8) for n in graph_nodes], lag_ratio=0.12),
+            FadeOut(graph_placeholder),
+            FadeOut(graph_label),
+            FadeOut(arrows_to_graph),
+            FadeIn(cash_graph[0]), FadeIn(cash_graph[1]),
+            FadeIn(sec_graph[0]), FadeIn(sec_graph[1]),
             run_time=0.8,
         )
 
         self.play(
-            LaggedStart(*[GrowArrow(e) for e in graph_edges], lag_ratio=0.15),
-            LaggedStart(*[FadeIn(t) for t in edge_labels], lag_ratio=0.15),
+            LaggedStart(*[FadeIn(n, scale=0.8) for n in cash_nodes], lag_ratio=0.10),
+            LaggedStart(*[FadeIn(n, scale=0.8) for n in sec_nodes], lag_ratio=0.10),
+            run_time=0.8,
+        )
+
+        self.play(
+            LaggedStart(*[Create(e) for e in cash_edges], lag_ratio=0.15),
+            LaggedStart(*[FadeIn(t) for t in cash_edge_labels], lag_ratio=0.15),
+            LaggedStart(*[Create(e) for e in sec_edges], lag_ratio=0.15),
+            LaggedStart(*[FadeIn(t) for t in sec_edge_labels], lag_ratio=0.15),
             run_time=1.0,
         )
 
         build_text = Text(
-            "Accounts become nodes. Transactions become directed arcs.",
-            font_size=25,
+            "Resources become nodes. Transactions become directed arcs.",
+            font_size=24,
             color=WHITE,
         ).to_edge(DOWN)
 
         self.play(FadeIn(build_text))
         self.wait(1.0)
 
+        graph_group = VGroup(cash_graph, sec_graph)
+
         self.play(
             FadeOut(tx_group),
             FadeOut(res_group),
-            FadeOut(arrows_to_graph),
             FadeOut(build_text),
-            graph_box.animate.scale(0.92).shift(LEFT * 2.7),
-            graph_label.animate.shift(LEFT * 2.7),
-            graph_nodes.animate.shift(LEFT * 2.7),
-            graph_edges.animate.shift(LEFT * 2.7),
-            edge_labels.animate.shift(LEFT * 2.7),
+            graph_group.animate.scale(0.72).move_to(LEFT * 3.0 + DOWN * 0.05),
             run_time=1.0,
             rate_func=smooth,
         )
 
-        metrics_title = Text("Computed graph metrics", font_size=25, color=BLUE)
-        metrics = VGroup(
-            self.metric_box("nodes", "3", BLUE),
-            self.metric_box("arcs", "4", YELLOW),
-            self.metric_box("avg arcs / node", "1.33", GREEN),
-            self.metric_box("density", "0.67", PURPLE),
-            self.metric_box("cycles", "detected", GREEN),
-            self.metric_box("imbalance", "medium", ORANGE),
-        ).arrange_in_grid(rows=3, cols=2, buff=0.25)
+        metrics_title = Text("Metrics computed on both graphs", font_size=24, color=BLUE)
 
-        metric_group = VGroup(metrics_title, metrics).arrange(DOWN, buff=0.35)
-        metric_group.move_to(RIGHT * 3.1 + DOWN * 0.15)
+        cash_metrics_title = Text("Cash graph", font_size=18, color=GREEN)
+        sec_metrics_title = Text("Security graph", font_size=18, color=BLUE)
+
+        cash_metrics = VGroup(
+            self.metric_box("nodes", "3", GREEN),
+            self.metric_box("maxdegree", "2", YELLOW),
+            self.metric_box("arcs", "3", GREEN),
+        ).arrange(DOWN, buff=0.16)
+
+        sec_metrics = VGroup(
+            self.metric_box("nodes", "3", BLUE),
+            self.metric_box("cycles", "0", YELLOW),
+            self.metric_box("connex components", "0", ORANGE),
+        ).arrange(DOWN, buff=0.16)
+
+        metric_columns = VGroup(
+            VGroup(cash_metrics_title, cash_metrics).arrange(DOWN, buff=0.16),
+            VGroup(sec_metrics_title, sec_metrics).arrange(DOWN, buff=0.16),
+        ).arrange(RIGHT, buff=0.22)
+
+        metric_group = VGroup(metrics_title, metric_columns).arrange(DOWN, buff=0.25)
+        metric_group.scale(0.78)
+        metric_group.move_to(RIGHT * 3.35 + DOWN * 0.08)
 
         metric_arrow = Arrow(
-            graph_box.get_right(),
+            graph_group.get_right(),
             metric_group.get_left(),
             buff=0.3,
             color=BLUE,
             stroke_width=4,
         )
 
-        self.play(GrowArrow(metric_arrow))
+        self.play(Create(metric_arrow))
         self.play(
-            LaggedStart(*[FadeIn(m, shift=UP * 0.12) for m in metrics], lag_ratio=0.12),
+            LaggedStart(*[FadeIn(m, shift=UP * 0.12) for m in metric_columns], lag_ratio=0.12),
             FadeIn(metrics_title),
             run_time=1.2,
         )
 
         runtime_box = RoundedRectangle(
-            width=5.4,
-            height=1.1,
+            width=9.5,
+            height=1.3,
             corner_radius=0.14,
             stroke_color=YELLOW,
             stroke_width=2.5,
@@ -390,7 +483,7 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
         ).to_edge(DOWN, buff=0.45)
 
         runtime_text = Text(
-            "These metrics can help predict MOM runtime before launching optimization.",
+            "Metrics computed using the MCM can help predict MOM runtime.",
             font_size=22,
             color=YELLOW,
         ).move_to(runtime_box)
@@ -401,11 +494,7 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
         self.play(
             FadeOut(mcm_title),
             FadeOut(subtitle),
-            FadeOut(graph_box),
-            FadeOut(graph_label),
-            FadeOut(graph_nodes),
-            FadeOut(graph_edges),
-            FadeOut(edge_labels),
+            FadeOut(graph_group),
             FadeOut(metric_arrow),
             FadeOut(metric_group),
             FadeOut(runtime_box),
@@ -448,16 +537,18 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
         self.play(FadeIn(title), FadeIn(rts), run_time=0.5)
 
         tx_data = [
-            ("ID", f"T{str(i).zfill(3)}", "Cash", f"€{v}") for i, v in zip(
-                range(1, 8),
-                [200, 1250, 75, 3000, 580, 2100, 410, 9000]
-            )
+            ("ID", "T001", "Amount", "€200", "ISIN", "FR0000120271", "Qty", "40"),
+            ("ID", "T002", "Amount", "€1,250"),
+            ("ID", "T003", "Amount", "€75", "ISIN", "DE000BAY0017", "Qty", "12"),
+            ("ID", "T004", "ISIN", "IT0003132476", "Qty", "25"),
+            ("ID", "T005", "Amount", "€580", "ISIN", "FR0000131104", "Qty", "18"),
+            ("ID", "T006", "Amount", "€2,100"),
+            ("ID", "T007", "ISIN", "ES0178430E18", "Qty", "50"),
+            ("ID", "T008", "Amount", "€9,000", "ISIN", "NL0000009165", "Qty", "30"),
         ]
 
         outcomes = [
-            True, False, True, False, False,
-            True, False, False, True, False,
-            False, True, False, False, True
+            True, False, True, True, True, True, False, True
         ]
 
         input_y = 0.0
@@ -482,15 +573,15 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
 
         onhold_cards = []
 
-        for i, ((a1n, a1v, a2n, a2v), ok) in enumerate(zip(tx_data, outcomes)):
+        for i, (data, ok) in enumerate(zip(tx_data, outcomes)):
             if not ok:
-                tx = TransactionRect(a1n, a1v, a2n, a2v).scale(0.8)
+                tx = TransactionRect(*data).scale(0.8)
                 tx.move_to([start_x - i * spawn_gap - 5, input_y, 0])
                 self.add(tx)
                 onhold_cards.append(tx)
 
-        for i, ((a1n, a1v, a2n, a2v), ok) in enumerate(zip(tx_data, outcomes)):
-            tx = TransactionRect(a1n, a1v, a2n, a2v).scale(0.8)
+        for i, (data, ok) in enumerate(zip(tx_data, outcomes)):
+            tx = TransactionRect(*data).scale(0.8)
             tx.move_to([start_x - i * spawn_gap, input_y, 0])
             self.add(tx)
 
@@ -534,9 +625,8 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
                 self.play(sun_opacity.animate.set_value(1), run_time=0.5)
             if i == 6:
                 self.play(sun_opacity.animate.set_value(0.5), run_time=0.5)
-            if i == 8:
+            if i == 7:
                 self.play(sun_opacity.animate.set_value(0), run_time=0.5)
-                break
 
         self.wait(0.5)
 
@@ -588,7 +678,7 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
 
         moon_group = VGroup(moon, moon_cut)
 
-        clock = Text("22:30", font_size=36, color=GRAY_B)
+        clock = Text("20:30", font_size=36, color=GRAY_B)
         clock.next_to(moon_group, DOWN, buff=0.3)
 
         self.play(
@@ -606,6 +696,7 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
 
         incoming_cards = VGroup(*onhold_cards[:4])
         self.play(FadeOut(incoming_cards), run_time=0.4)
+        self.play(FadeOut(title), run_time=0.3)
 
         self.mcm_graph_animation(incoming_cards)
 
@@ -650,22 +741,25 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
         )
 
         transactions = [
-            ("A", "B", 30, True),
-            ("C", "A", 20, True),
-            ("B", "C", 40, True),
-            ("A", "C", 60, False),
+            ("A", "B", 30, "DVP", True),
+            ("C", "A", 20, "Cash transfer", True),
+            ("B", "C", 40, "DVP", True),
+            ("A", "C", 60, "DVP", False),
         ]
 
         tx_cards = VGroup()
 
-        for i, (buyer, seller, amount, selected) in enumerate(transactions, start=1):
-            tx_cards.add(self.make_tx_card(i, buyer, seller, amount))
+        for i, (buyer, seller, amount, movement_type, selected) in enumerate(transactions, start=1):
+            if movement_type == "Cash transfer":
+                tx_cards.add(self.small_data_card(f"T{i}: cash {buyer} → {seller}", GREEN, width=3.2))
+            else:
+                tx_cards.add(self.small_data_card(f"T{i}: cash {buyer} → {seller} sec. {seller} → {buyer}", GREEN, width=3.8))
 
         tx_cards.arrange(DOWN, buff=0.16)
         tx_cards.move_to(engine_box.get_center() + DOWN * 0.35)
 
         intro = Text(
-            "MOM receives graph metrics and pending transactions.",
+            "MOM receives pending transactions.",
             font_size=24,
             color=YELLOW,
         ).to_edge(DOWN)
@@ -682,7 +776,7 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
         self.play(FadeOut(intro))
 
         thinking = Text(
-            "MOM searches for a feasible group.",
+            "MOM searches for a feasible settlment by looking at the whole set.",
             font_size=24,
             color=GRAY_B,
         ).to_edge(DOWN)
@@ -691,7 +785,7 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
 
         selected_rects = VGroup()
 
-        for i, (_, _, _, selected) in enumerate(transactions):
+        for i, (_, _, _, _, selected) in enumerate(transactions):
             color = GREEN if selected else RED
             rect = SurroundingRectangle(
                 tx_cards[i],
@@ -741,17 +835,24 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
         self.wait(0.8)
 
         selected_transactions = [
-            ("A", "B", 30),
-            ("C", "A", 20),
-            ("B", "C", 40),
+            ("A", "B", 30, "DVP"),
+            ("C", "A", 20, "Cash transfer"),
+            ("B", "C", 40, "DVP"),
         ]
 
-        for i, (buyer, seller, amount) in enumerate(selected_transactions, start=1):
-            tx_text = Text(
-                f"T{i}: cash {buyer} → {seller}, securities {seller} → {buyer}",
-                font_size=21,
-                color=YELLOW,
-            ).to_edge(DOWN)
+        for i, (buyer, seller, amount, movement_type) in enumerate(selected_transactions, start=1):
+            if movement_type == "Cash transfer":
+                tx_text = Text(
+                    f"T{i}: cash transfer only: {buyer} → {seller}",
+                    font_size=21,
+                    color=GREEN,
+                ).to_edge(DOWN)
+            else:
+                tx_text = Text(
+                    f"T{i}: cash {buyer} → {seller}, securities {seller} → {buyer}",
+                    font_size=21,
+                    color=YELLOW,
+                ).to_edge(DOWN)
 
             self.play(Transform(execute, tx_text), run_time=0.35)
 
@@ -766,29 +867,30 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
                 run_time=0.4,
             )
 
-            self.outside_bezier_transfer(sec_tanks[seller], sec_tanks[buyer], BLUE, side="right")
+            if movement_type == "DVP":
+                self.outside_bezier_transfer(sec_tanks[seller], sec_tanks[buyer], BLUE, side="right")
 
-            securities[seller] -= amount
-            securities[buyer] += amount
+                securities[seller] -= amount
+                securities[buyer] += amount
 
-            self.play(
-                sec_tanks[seller].update_amount(securities[seller]),
-                sec_tanks[buyer].update_amount(securities[buyer]),
-                run_time=0.4,
-            )
+                self.play(
+                    sec_tanks[seller].update_amount(securities[seller]),
+                    sec_tanks[buyer].update_amount(securities[buyer]),
+                    run_time=0.4,
+                )
 
         self.play(FadeOut(execute), FadeOut(selected_plan))
 
         recap = VGroup(
             Text("Key idea", font_size=34, color=YELLOW),
             Text(
-                "MCM measures the graph.\nMOM optimizes the batch.",
+                "MCM compute metrics of the problem",
                 font_size=29,
                 color=WHITE,
                 line_spacing=1.15,
             ),
             Text(
-                "Then T2S executes cash and securities movements.",
+                "MOM maximizes the settlement ratio",
                 font_size=25,
                 color=GRAY_B,
             ),
@@ -803,11 +905,7 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
 
         self.play(FadeOut(recap))
 
-        final = Text(
-            "This is why settlement is an optimization problem.",
-            font_size=36,
-            color=YELLOW,
-        )
+
 
         self.play(
             FadeOut(cash_group),
@@ -815,9 +913,6 @@ class T2S_RTS_to_NTS_WithMCM(MovingCameraScene):
             FadeOut(cash_title),
             FadeOut(sec_title),
             FadeOut(moon_group),
-            FadeOut(clock),
-            FadeOut(title),
+            FadeOut(clock)
         )
-
-        self.play(Write(final))
         self.wait(3)
